@@ -269,25 +269,27 @@ function Dashboard({ nationality, onBack, onNavigate }: DashboardProps) {
     const isKorean = nationality === 'korean'
 
     useEffect(() => {
-        // Simulate loading and filter by nationality
-        setLoading(true)
-        setTimeout(() => {
-            let filteredEvents = MOCK_EVENTS.filter(e =>
-                nationality === 'foreigner' ? e.forForeigners : e.forKoreans
-            )
-            let filteredJobs = MOCK_JOBS.filter(j =>
-                nationality === 'foreigner' ? j.forForeigners : j.forKoreans
-            )
+        const fetchData = async () => {
+            setLoading(true)
+            try {
+                const query = nationality ? `?nationality=${nationality}` : ''
+                const response = await fetch(`/api/all${query}`)
 
-            // For foreigners, prioritize visa-sponsored jobs
-            if (nationality === 'foreigner') {
-                filteredJobs.sort((a, b) => (b.visaSponsorship ? 1 : 0) - (a.visaSponsorship ? 1 : 0))
+                if (response.ok) {
+                    const data = await response.json()
+                    setEvents(data.events)
+                    setJobs(data.jobs)
+                } else {
+                    console.error('Failed to fetch data')
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error)
+            } finally {
+                setLoading(false)
             }
+        }
 
-            setEvents(filteredEvents)
-            setJobs(filteredJobs)
-            setLoading(false)
-        }, 500)
+        fetchData()
     }, [nationality])
 
     const getTagClass = (type: string) => {

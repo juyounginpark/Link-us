@@ -34,91 +34,117 @@ export interface SignupData {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Mock users database (localStorage)
-const USERS_KEY = 'globalbridge_users'
-const CURRENT_USER_KEY = 'globalbridge_current_user'
+const TOKEN_KEY = 'linkus_access_token'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
+    const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        // Check for existing session
-        const savedUser = localStorage.getItem(CURRENT_USER_KEY)
-        if (savedUser) {
-            setUser(JSON.parse(savedUser))
-        }
+        checkAuth()
     }, [])
 
-    const getUsers = (): Record<string, User & { password: string }> => {
-        const users = localStorage.getItem(USERS_KEY)
-        return users ? JSON.parse(users) : {}
-    }
+    const checkAuth = async () => {
+        const token = localStorage.getItem(TOKEN_KEY)
+        if (!token) {
+            setLoading(false)
+            return
+        }
 
-    const saveUsers = (users: Record<string, User & { password: string }>) => {
-        localStorage.setItem(USERS_KEY, JSON.stringify(users))
+        try {
+            const response = await fetch('/api/auth/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+
+            if (response.ok) {
+                const userData = await response.json()
+                setUser(userData)
+            } else {
+                // Token invalid or expired
+                logout()
+            }
+        } catch (error) {
+            console.error('Auth check failed:', error)
+            logout()
+        } finally {
+            setLoading(false)
+        }
     }
 
     const login = async (email: string, password: string): Promise<boolean> => {
-        const users = getUsers()
-        const userRecord = users[email]
+        try {
+            // 1. Get Token
+            const formData = new URLSearchParams()
+            formData.append('username', email)
+            formData.append('password', password)
 
-        if (userRecord && userRecord.password === password) {
-            const { password: _, ...userData } = userRecord
-            setUser(userData)
-            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userData))
-            return true
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            })
+
+            if (!response.ok) {
+                return false
+            }
+
+            const data = await response.json()
+            const token = data.access_token
+            localStorage.setItem(TOKEN_KEY, token)
+
+            // 2. Get User Details
+            const meResponse = await fetch('/api/auth/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+
+            if (meResponse.ok) {
+                const userData = await meResponse.json()
+                setUser(userData)
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error('Login error:', error)
+            return false
         }
-        return false
     }
 
     const signup = async (data: SignupData): Promise<boolean> => {
-        const users = getUsers()
+        try {
+            const response = await fetch('/api/auth/signup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
 
-        if (users[data.email]) {
-            return false // Email already exists
+            if (response.ok) {
+                return true
+            }
+            return false
+        } catch (error) {
+            console.error('Signup error:', error)
+            return false
         }
-
-        const newUser: User & { password: string } = {
-            id: Date.now().toString(),
-            email: data.email,
-            password: data.password,
-            name: data.name,
-            university: data.university,
-            nationality: data.nationality,
-            major: data.major,
-            year: data.year,
-            bio: '',
-            joinedDate: new Date().toISOString().split('T')[0],
-            profileImage: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.name)}`
-        }
-
-        users[data.email] = newUser
-        saveUsers(users)
-
-        const { password: _, ...userData } = newUser
-        setUser(userData)
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(userData))
-        return true
     }
 
     const logout = () => {
         setUser(null)
-        localStorage.removeItem(CURRENT_USER_KEY)
+        localStorage.removeItem(TOKEN_KEY)
     }
 
-    const updateProfile = (updates: Partial<User>) => {
+    const updateProfile = async (updates: Partial<User>) => {
+        // In a real app, send PUT/PATCH to backend
+        // For now, optimistic update locally
         if (!user) return
-
-        const updatedUser = { ...user, ...updates }
-        setUser(updatedUser)
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser))
-
-        // Also update in users database
-        const users = getUsers()
-        if (users[user.email]) {
-            users[user.email] = { ...users[user.email], ...updates }
-            saveUsers(users)
-        }
+        setUser({ ...user, ...updates })
     }
 
     return (
@@ -130,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             logout,
             updateProfile
         }}>
-            {children}
+            {!loading && children}
         </AuthContext.Provider>
     )
 }
