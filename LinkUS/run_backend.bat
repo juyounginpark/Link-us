@@ -1,0 +1,9 @@
+@echo off
+echo Starting LINK-US Backend...
+cd backend
+echo Installing dependencies...
+pip install -r requirements.txt
+echo.
+echo Starting Server...
+python main.py
+pause

@@ -1,21 +1,58 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import json
+from auth import (
+    Token, get_password_hash, verify_password, 
+    create_access_token, get_current_user_email,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
+from datetime import timedelta
 
 app = FastAPI(title="LINK-US API", version="1.0.0")
 
-# CORS 설정
+# --- Security: Hardened CORS ---
+# Allow specific origins for production security
+origins = [
+    "http://localhost:5173",  # Local Frontend
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",  # Alt Port
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Mock Data ---
+# --- Models ---
+class UserBase(BaseModel):
+    email: str
+    name: str 
+    university: str
+    nationality: str # 'korean' or 'foreigner'
+    major: str
+    year: int
+
+class UserCreate(UserBase):
+    password: str
+
+class User(UserBase):
+    id: str
+    joinedDate: str
+    profileImage: str
+
+    class Config:
+        orm_mode = True
+
+# --- Mock Database ---
+# In a real app, use SQLite/PostgreSQL
+USERS_DB = {} 
+
 EVENTS = [
     {
         "id": 1,
@@ -223,6 +260,60 @@ JOBS = [
 def root():
     return {"message": "Welcome to LINK-US API", "version": "1.0.0"}
 
+# --- Auth Endpoints ---
+@app.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
+def signup(user: UserCreate):
+    if user.email in USERS_DB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    hashed_password = get_password_hash(user.password)
+    
+    # Store user with hashed password
+    import time
+    new_user = {
+        "email": user.email,
+        "password": hashed_password,
+        "name": user.name,
+        "university": user.university,
+        "nationality": user.nationality,
+        "major": user.major,
+        "year": user.year,
+        "id": str(int(time.time())),
+        "joinedDate": "2026-01-29", # Dynamic date in real app
+        "profileImage": f"https://api.dicebear.com/7.x/initials/svg?seed={user.name}"
+    }
+    USERS_DB[user.email] = new_user
+    return {"message": "User created successfully"}
+
+@app.post("/api/auth/login", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    # OAuth2PasswordRequestForm expects 'username' and 'password' fields
+    # Frontend must send 'username' (as email) and 'password'
+    user = USERS_DB.get(form_data.username)
+    if not user or not verify_password(form_data.password, user["password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["email"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/api/auth/me", response_model=User)
+def read_users_me(email: str = Depends(get_current_user_email)):
+    user = USERS_DB.get(email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+# --- Data Endpoints ---
 @app.get("/api/events")
 def get_events(nationality: Optional[str] = None, category: Optional[str] = None):
     """Get all events, optionally filtered by nationality preference and category"""
