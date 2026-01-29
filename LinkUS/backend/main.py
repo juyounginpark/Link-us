@@ -315,6 +315,12 @@ def read_users_me(email: str = Depends(get_current_user_email)):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
+# --- Admin Endpoint (For Testing) ---
+@app.get("/api/admin/users")
+def get_all_users():
+    """List all registered users (Debug only)"""
+    return list(USERS_DB.values())
+
 # --- Data Endpoints ---
 @app.get("/api/events")
 def get_events(nationality: Optional[str] = None, category: Optional[str] = None):
