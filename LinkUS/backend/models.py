@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Text
 from database import Base
 
 class User(Base):
@@ -13,4 +13,5 @@ class User(Base):
     major = Column(String(100))
     year = Column(Integer)
     joinedDate = Column(String(50))
-    profileImage = Column(String(255))
+    profileImage = Column(Text)
+
