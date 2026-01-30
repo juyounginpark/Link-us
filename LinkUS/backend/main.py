@@ -4,6 +4,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import Optional, List
 import json
+import time 
+from sqlalchemy.orm import Session
+from database import engine, get_db
+import models
 from auth import (
     Token, get_password_hash, verify_password, 
     create_access_token, get_current_user_email,
@@ -11,14 +15,16 @@ from auth import (
 )
 from datetime import timedelta
 
+# Create Tables
+models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="LINK-US API", version="1.0.0")
 
 # --- Security: Hardened CORS ---
-# Allow specific origins for production security
 origins = [
-    "http://localhost:5173",  # Local Frontend
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:5174",  # Alt Port
+    "http://localhost:5174",
     "http://LinkUsKNU.mooo.com",
     "https://LinkUsKNU.mooo.com",
 ]
@@ -31,7 +37,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Models ---
+# --- Models (Pydantic) ---
 class UserBase(BaseModel):
     email: str
     name: str 
@@ -51,10 +57,7 @@ class User(UserBase):
     class Config:
         orm_mode = True
 
-# --- Mock Database ---
-# In a real app, use SQLite/PostgreSQL
-USERS_DB = {} 
-
+# --- Mock Data (Events/Jobs) ---
 EVENTS = [
     {
         "id": 1,
@@ -262,10 +265,12 @@ JOBS = [
 def root():
     return {"message": "Welcome to LINK-US API", "version": "1.0.0"}
 
-# --- Auth Endpoints ---
+# --- Auth Endpoints (Database) ---
 @app.post("/api/auth/signup", status_code=status.HTTP_201_CREATED)
-def signup(user: UserCreate):
-    if user.email in USERS_DB:
+def signup(user: UserCreate, db: Session = Depends(get_db)):
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
@@ -273,29 +278,32 @@ def signup(user: UserCreate):
     
     hashed_password = get_password_hash(user.password)
     
-    # Store user with hashed password
-    import time
-    new_user = {
-        "email": user.email,
-        "password": hashed_password,
-        "name": user.name,
-        "university": user.university,
-        "nationality": user.nationality,
-        "major": user.major,
-        "year": user.year,
-        "id": str(int(time.time())),
-        "joinedDate": "2026-01-29", # Dynamic date in real app
-        "profileImage": f"https://api.dicebear.com/7.x/initials/svg?seed={user.name}"
-    }
-    USERS_DB[user.email] = new_user
+    # Random ID (simplification)
+    import random
+    new_user = models.User(
+        id=str(int(time.time())) + str(random.randint(100, 999)),
+        email=user.email,
+        password=hashed_password,
+        name=user.name,
+        university=user.university,
+        nationality=user.nationality,
+        major=user.major,
+        year=user.year,
+        joinedDate="2026-01-30",
+        profileImage=f"https://api.dicebear.com/7.x/initials/svg?seed={user.name}"
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
     return {"message": "User created successfully"}
 
 @app.post("/api/auth/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    # OAuth2PasswordRequestForm expects 'username' and 'password' fields
-    # Frontend must send 'username' (as email) and 'password'
-    user = USERS_DB.get(form_data.username)
-    if not user or not verify_password(form_data.password, user["password"]):
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Find user
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    
+    if not user or not verify_password(form_data.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -304,22 +312,23 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["email"]}, expires_delta=access_token_expires
+        data={"sub": user.email}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/api/auth/me", response_model=User)
-def read_users_me(email: str = Depends(get_current_user_email)):
-    user = USERS_DB.get(email)
+def read_users_me(email: str = Depends(get_current_user_email), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == email).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-# --- Admin Endpoint (For Testing) ---
+# --- Admin Endpoint (Database) ---
 @app.get("/api/admin/users")
-def get_all_users():
-    """List all registered users (Debug only)"""
-    return list(USERS_DB.values())
+def get_all_users(db: Session = Depends(get_db)):
+    """List all registered users from DB"""
+    users = db.query(models.User).all()
+    return users
 
 # --- Data Endpoints ---
 @app.get("/api/events")
