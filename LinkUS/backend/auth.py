@@ -12,8 +12,8 @@ SECRET_KEY = "linkus-secure-secret-key-change-me-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing - Using sha256_crypt (no length limit, secure)
+pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
@@ -31,9 +31,8 @@ def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
-    # Bcrypt limitation: max 72 bytes. 
-    # Must truncate BYTES, not characters (for unicode support)
-    return pwd_context.hash(password.encode('utf-8')[:72])
+    # sha256_crypt has no length limit
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
