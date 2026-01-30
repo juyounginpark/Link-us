@@ -1398,3 +1398,43 @@
     flex-direction: column;
   }
 }
+
+/* === Mobile Optimization (Added) === */
+@media (max-width: 768px) {
+  /* Landing Page */
+  .landing-features {
+    grid-template-columns: 1fr;
+    gap: var(--space-xl);
+  }
+  
+  .landing-page {
+    padding: var(--space-md);
+  }
+  
+  /* Auth Page */
+  .auth-container {
+    padding: var(--space-lg);
+    width: 100%;
+    max-width: 100%;
+  }
+  
+  /* Navigation */
+  .header-nav {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-sm);
+  }
+  
+  .nav-btn {
+    font-size: 0.8rem;
+    padding: var(--space-xs) var(--space-sm);
+  }
+  
+  /* Adjust Font Sizes */
+  h1 { font-size: 1.75rem; }
+  h2 { font-size: 1.5rem; }
+  
+  .landing-title {
+    font-size: 2rem;
+  }
+}
