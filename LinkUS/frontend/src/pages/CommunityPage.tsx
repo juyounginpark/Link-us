@@ -134,7 +134,7 @@ function CommunityPage({ onBack, isKorean }: CommunityPageProps) {
         if (!user || !newPostTitle.trim() || !newPostContent.trim()) return
 
         try {
-            const token = localStorage.getItem('linkus_token')
+            const token = localStorage.getItem('linkus_access_token')
             const res = await fetch('/api/posts', {
                 method: 'POST',
                 headers: {
