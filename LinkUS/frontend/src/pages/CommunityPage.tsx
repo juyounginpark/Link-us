@@ -21,9 +21,6 @@ interface Post {
 }
 
 type PostCategory = 'general' | 'qna' | 'events' | 'jobs' | 'tips'
-
-const POSTS_KEY = 'linkus_posts'
-
 // Sample posts
 const SAMPLE_POSTS: Post[] = [
     {
@@ -90,14 +87,34 @@ function CommunityPage({ onBack, isKorean }: CommunityPageProps) {
     const [newPostCategory, setNewPostCategory] = useState<PostCategory>('general')
 
     useEffect(() => {
-        // Load posts from localStorage or use sample posts
-        const savedPosts = localStorage.getItem(POSTS_KEY)
-        if (savedPosts) {
-            setPosts(JSON.parse(savedPosts))
-        } else {
-            setPosts(SAMPLE_POSTS)
-            localStorage.setItem(POSTS_KEY, JSON.stringify(SAMPLE_POSTS))
+        // Load posts from API
+        const fetchPosts = async () => {
+            try {
+                const res = await fetch('/api/posts')
+                if (res.ok) {
+                    const data = await res.json()
+                    setPosts(data.posts.map((p: any) => ({
+                        id: p.id,
+                        authorId: p.author_email,
+                        authorName: p.author_name,
+                        authorUni: p.author_university || '',
+                        authorNationality: p.author_nationality || 'korean',
+                        title: p.title,
+                        content: p.content,
+                        category: p.category,
+                        createdAt: p.created_at?.split('T')[0] || '',
+                        likes: 0,
+                        comments: 0
+                    })))
+                } else {
+                    // Fallback to sample posts
+                    setPosts(SAMPLE_POSTS)
+                }
+            } catch {
+                setPosts(SAMPLE_POSTS)
+            }
         }
+        fetchPosts()
     }, [])
 
     const categories: { key: PostCategory | 'all'; label: string; labelKo: string; emoji: string }[] = [
@@ -113,26 +130,43 @@ function CommunityPage({ onBack, isKorean }: CommunityPageProps) {
         ? posts
         : posts.filter(p => p.category === activeCategory)
 
-    const handleCreatePost = () => {
+    const handleCreatePost = async () => {
         if (!user || !newPostTitle.trim() || !newPostContent.trim()) return
 
-        const newPost: Post = {
-            id: Date.now().toString(),
-            authorId: user.id,
-            authorName: user.name,
-            authorUni: user.university,
-            authorNationality: user.nationality,
-            title: newPostTitle,
-            content: newPostContent,
-            category: newPostCategory,
-            createdAt: new Date().toISOString().split('T')[0],
-            likes: 0,
-            comments: 0
-        }
+        try {
+            const token = localStorage.getItem('linkus_token')
+            const res = await fetch('/api/posts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    title: newPostTitle,
+                    content: newPostContent,
+                    category: newPostCategory
+                })
+            })
 
-        const updatedPosts = [newPost, ...posts]
-        setPosts(updatedPosts)
-        localStorage.setItem(POSTS_KEY, JSON.stringify(updatedPosts))
+            if (res.ok) {
+                const newPost = await res.json()
+                setPosts([{
+                    id: newPost.id,
+                    authorId: newPost.author_email,
+                    authorName: newPost.author_name,
+                    authorUni: newPost.author_university || '',
+                    authorNationality: newPost.author_nationality || 'korean',
+                    title: newPost.title,
+                    content: newPost.content,
+                    category: newPost.category,
+                    createdAt: newPost.created_at?.split('T')[0] || '',
+                    likes: 0,
+                    comments: 0
+                }, ...posts])
+            }
+        } catch (err) {
+            console.error('Failed to create post', err)
+        }
 
         setNewPostTitle('')
         setNewPostContent('')
@@ -145,7 +179,6 @@ function CommunityPage({ onBack, isKorean }: CommunityPageProps) {
             p.id === postId ? { ...p, likes: p.likes + 1 } : p
         )
         setPosts(updatedPosts)
-        localStorage.setItem(POSTS_KEY, JSON.stringify(updatedPosts))
     }
 
     return (
