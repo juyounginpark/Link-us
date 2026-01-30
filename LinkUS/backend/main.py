@@ -378,6 +378,85 @@ def get_all_content(nationality: Optional[str] = None):
         "total_jobs": jobs_result["total"]
     }
 
+# --- Posts CRUD Endpoints ---
+class PostCreate(BaseModel):
+    title: str
+    content: str
+    category: str = "general"
+
+class PostResponse(BaseModel):
+    id: str
+    author_email: str
+    author_name: str
+    author_university: Optional[str] = None
+    author_nationality: Optional[str] = None
+    title: str
+    content: str
+    category: str
+    created_at: str
+
+    class Config:
+        orm_mode = True
+
+@app.post("/api/posts", response_model=PostResponse)
+def create_post(
+    post: PostCreate,
+    email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Create a new post (requires login)"""
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    import uuid
+    from datetime import datetime
+    
+    new_post = models.Post(
+        id=str(uuid.uuid4()),
+        author_email=email,
+        author_name=user.name,
+        author_university=user.university,
+        author_nationality=user.nationality,
+        title=post.title,
+        content=post.content,
+        category=post.category,
+        created_at=datetime.now().isoformat()
+    )
+    
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
+    return new_post
+
+@app.get("/api/posts")
+def get_posts(category: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get all posts, optionally filtered by category"""
+    query = db.query(models.Post).order_by(models.Post.created_at.desc())
+    
+    if category and category != "all":
+        query = query.filter(models.Post.category == category)
+    
+    posts = query.all()
+    return {"posts": posts, "total": len(posts)}
+
+@app.delete("/api/posts/{post_id}")
+def delete_post(
+    post_id: str,
+    email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db)
+):
+    """Delete a post (only author can delete)"""
+    post = db.query(models.Post).filter(models.Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.author_email != email:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    db.delete(post)
+    db.commit()
+    return {"message": "Post deleted"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
